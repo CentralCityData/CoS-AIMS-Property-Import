@@ -28,13 +28,6 @@ def load_data():
         df_rps = puller.load_query_as_dataframe("hamer_pull")
         df_rps.to_csv(f"{CACHE_DIR}/{RPS_CACHE_FNAME}", index=False)
 
-    # try:
-    #     rr_data = pd.read_csv(f"{CACHE_DIR}/{RENTAL_REGISTRY_FNAME}")
-    # except FileNotFoundError:
-    #     puller = ODBCConnection(CONNECTION_STRING_IPS)
-    #     rr_data = puller.load_query_as_dataframe("rr_pull")
-    #     rps_data.to_csv(f"{CACHE_DIR}/{RENTAL_REGISTRY_FNAME}", index=False)
-
 
     return (df_rps, df_county)
 

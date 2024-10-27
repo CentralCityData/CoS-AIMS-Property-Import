@@ -1,18 +1,6 @@
 from load_data import load_data
-from column_sets import out_cols_prop_import, out_cols_back_of_house
-
 import pandas as pd
 from datetime import datetime
-
-def create_link_to_old_property_join(new):
-
-    old = pd.read_csv("./inputs/first_prop_import.tsv", sep='\t')
-    new.drop(["parcel_id"], axis=1, inplace=True)
-    new["parcel_id"] = new["old_aims_account_number"]
-    df = old.merge(new, on="parcel_id", how="left")
-    df = df.groupby(["parcel_id"]).aggregate("first")
-    df.to_csv("./outputs/old_account_update.tsv", sep="\t")
-    return
 
 
 def pad_account_number(elm):
@@ -33,27 +21,21 @@ def create_owner_name(row):
 
 def create_property_address_street(row):
 
+    # THIS WAS NEVER IMPLEMENTED?
+    
     # If there is no record in the county data,
     # We will have to fall back to the RPS address.
     # This is the case for about 10k records.
-    if str(row["properties.ST_NAME"]).strip() == "nan":
-        create_property_street_address_rps(row)
+    # if str(row["properties.ST_NAME"]).strip() == "nan":
+    #     create_property_street_address_rps(row)
+    
+    
 
     second_line = f"{row['properties.ST_NUMBER']} {row['properties.ST_NAME']}"
     if not pd.isnull(row['properties.SUFFIX']):
         second_line = (f"{second_line} {row['properties.SUFFIX']}")
 
     return second_line
-
-
-def create_property_street_address_rps(row):
-
-    cols = ['loc_prefix_dir', 'loc_st_nbr',
-            'loc_st_name', 'loc_mail_st_suff', 'loc_post_dir', 'loc_unit_name',
-            'loc_unit_nbr', 'loc_muni_name', 'loc_zip', 'loc_zip4']
-
-    print(row['loc_st_name'])
-    print(row['loc_st_nbr'])
 
 
 def create_mailing_address_county(row):
@@ -118,9 +100,11 @@ def create_export_columns(df):
     df["account_type"] = ["PROP" for x in range(df.shape[0])]
     # For Back of House / sanity checking / mail merge.
     df["property_mailing_address"] = df.apply(lambda x: create_mailing_address_county(x), axis=1, result_type="expand")
-    df["aims_tr_account_number"] = "TR" + df["parcel_id"].astype(str)
+
     df["owner_mailing_address"] = df.apply(lambda x: create_mailing_address_owner(x), axis=1, result_type="expand")
     df["county_id"] = df["id"]
+    
+    # df["aims_tr_account_number"] = "TR" + df["parcel_id"].astype(str)
 
     return df
 
@@ -128,10 +112,20 @@ def create_export_columns(df):
 def main():
 
     OUTPUT_DIR = "./outputs/"
+    
+    OUT_COLUMNS_PROPERTY_IMPORT = ['aims_account_number', 'county_record_id', 'parcel_id', 'print_key', 
+                                   'rps_account_number', 'owner_last_name', 'owner_first_name',	
+                                   'proprerty_street',	'property_city', 'property_state', 'property_zip', 'owner_street', 
+                                   'owner_city', 'owner_zip', 'owner_state', 'account_type']
+
+    OUT_COLUMNS_BACK_OF_HOUSE = ['county_id', 'parcel_id', 'aims_tr_account_number', 'print_key', 'account_number',
+                                'property_mailing_address', 'owner_mailing_address']
 
     # Attempts to locate files on disk, if files do
     # not exist -- loads from source systems.
+    print("Loading RPS and County Data.")
     df_rps, df_county = load_data()
+    print("Data Loaded.")
 
     # There are, for some reason, duplicate rows created
     # from the Hamer Query.
@@ -141,14 +135,15 @@ def main():
     df_county["print_key"] = df_county["properties.PRINTKEY"]
     df = df_county.merge(df_rps)
 
+    print("Performing Column Tranformations... ... ")
     df = create_export_columns(df)
+    
+    print("Exporting Data")
+    df[OUT_COLUMNS_PROPERTY_IMPORT].to_csv(f"{OUTPUT_DIR}AIMS_property_import_{datetime.now().month}-{datetime.now().day}-{datetime.now().year}.tsv", sep="\t", index=False)
+    df[OUT_COLUMNS_BACK_OF_HOUSE].to_excel(f"{OUTPUT_DIR}property_join_mailing_addresses.xlsx", index=False)
+    
+    print("Data Exported")
 
-    df[out_cols_prop_import].to_csv(f"{OUTPUT_DIR}aims_property_import_{datetime.now().month}-{datetime.now().day}-{datetime.now().year}.tsv", sep="\t", index=False)
-    df[out_cols_back_of_house].to_excel(f"{OUTPUT_DIR}property_join_mailing_addresses.xlsx", index=False)
-
-    create_link_to_old_property_join(df)
-
-    print(f"Ouput Files Generated to directory: '{OUTPUT_DIR}'")
 
 if __name__ == "__main__":
     main()
