@@ -3,6 +3,8 @@ import pandas as pd
 from datetime import datetime
 
 
+global max_trn
+
 def pad_account_number(elm):
 
     if len(str(elm)) == 12:
@@ -54,8 +56,11 @@ def create_street_address_owner(row):
     for val in ['mail_st_nbr', 'prefix_dir', 'mail_st_rt', 'own_mail_st_suff', 'post_dir']:
         if str(row[val]).strip() != "" and str(row[val]).strip() != "nan":
             if val == 'own_mail_st_suff':
-                if str(row["mail_st_rt"]).split()[-1].strip().upper() == row[val].strip().upper():
-                    continue
+                try:
+                    if str(row["mail_st_rt"]).split()[-1].strip().upper() == row[val].strip().upper():
+                        continue
+                except AttributeError:
+                    print(row["mail_st_rt"])
             line_pts.append(str(row[val]).strip())
     second_line = " ".join(line_pts)
     return second_line
@@ -78,6 +83,32 @@ def create_mailing_address_owner(row):
     return f"{first_line}\n{second_line}\n{third_line}"
 
 
+def get_TRN_record(row, mapper):
+    """This is kind of critial to document.
+    
+    TRN was originally just dumbly built off of the index of a file.
+
+    We should at some point build it to be a pointer to some other value,
+    but for now. We will want to ensure that the TRN remains MAPPED to the prior
+    value it was mapped to when the first ADDRESSS BASED Property Import File was generated.
+
+    WHat does this mean? It means we check to see if the county address record has a match to 
+    the original property import (1-23-2024) and if not we build a new TRN using the current
+    MAX Trn + 1.
+
+    Slopppy, but does work.
+    """
+
+    if row["id"] in mapper.keys():
+        return mapper[row["id"]]
+    else:
+        global max_trn
+        max_trn = max_trn + 1
+        return max_trn
+
+
+
+
 def create_export_columns(df):
     
     # For AIMS property import 
@@ -86,7 +117,16 @@ def create_export_columns(df):
     # WARNING: THERE WAS NO GOOD PLACE TO PUT THIS.
     df.drop_duplicates(subset="proprerty_street", inplace=True)
 
-    df["aims_account_number"] = "TRN" + df.index.astype(str)
+    # Make this cleaner, and swap file to new file when finished.
+    # -----------------------------------------------------------
+    map_df = pd.read_csv("./outputs/aims_property_import_1-23-2024.tsv", sep="\t")
+    mapper = dict(zip(map_df["county_record_id"], map_df["aims_account_number"]))
+    # -----------------------------------------------------------
+    global max_trn
+    max_trn = max([int(elm.replace("TRN", "")) for elm in mapper.values()])
+
+    # df["aims_account_number"] = "TRN" + df.index.astype(str)
+    df["aims_account_number"] = df.apply(lambda x: get_TRN_record(x, mapper), axis=1)
     df["county_record_id"] = df["id"].astype(str)
     df["old_aims_account_number"] = "TR" + df["parcel_id"].astype(str)
     df["rps_account_number"] = df["account_number"].apply(lambda x: pad_account_number(x))
@@ -118,8 +158,9 @@ def main():
                                    'proprerty_street',	'property_city', 'property_state', 'property_zip', 'owner_street', 
                                    'owner_city', 'owner_zip', 'owner_state', 'account_type']
 
-    OUT_COLUMNS_BACK_OF_HOUSE = ['county_id', 'parcel_id', 'aims_tr_account_number', 'print_key', 'account_number',
+    OUT_COLUMNS_BACK_OF_HOUSE = ['county_id', 'parcel_id', 'aims_account_number', 'print_key', 'account_number',
                                 'property_mailing_address', 'owner_mailing_address']
+
 
     # Attempts to locate files on disk, if files do
     # not exist -- loads from source systems.
